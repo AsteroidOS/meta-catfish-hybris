@@ -1,0 +1,144 @@
+From 0bb6ac637b793ff8c44a4eef210213c033ff24ab Mon Sep 17 00:00:00 2001
+From: MagneFire <dgriet@gmail.com>
+Date: Sat, 22 Jan 2022 16:13:26 +0100
+Subject: [PATCH] Synchronize time on LCD.
+Use the vendor provided libmcutool.so library to synchronize the LCD time when the screen turns off.
+
+---
+ hwcomposer/hwcomposer_backend_v11.cpp | 57 +++++++++++++++++++++++++++
+ hwcomposer/hwcomposer_backend_v11.h   | 17 ++++++++
+ 2 files changed, 74 insertions(+)
+
+diff --git a/hwcomposer/hwcomposer_backend_v11.cpp b/hwcomposer/hwcomposer_backend_v11.cpp
+index 8f158cd..76b3a49 100644
+--- a/hwcomposer/hwcomposer_backend_v11.cpp
++++ b/hwcomposer/hwcomposer_backend_v11.cpp
+@@ -48,12 +48,47 @@
+ #include <QtCore/QCoreApplication>
+ #include <private/qwindow_p.h>
+ 
++//#include <android-config.h>
++//#include <hardware/hardware.h>
++//#include <hybris/common/binding.h>
++#include <dlfcn.h>
++
+ #include "qsystrace_selector.h"
+ 
+ #ifdef HWC_PLUGIN_HAVE_HWCOMPOSER1_API
+ 
+ // #define QPA_HWC_TIMING
+ 
++
++#define LOAD_MCU_FUNC(x) { \
++    mcu->x = (int32_t (*)())android_dlsym(handler, "Java_com_mobvoi_ticwear_mcuservice_CoreService_"#x); \
++    if (mcu->x == NULL) { \
++        fprintf(stderr, "Unable to get symbol\n"); \
++    } \
++}
++#define LOAD_MCU_FUNC1(x) { \
++    mcu->x = (int32_t (*)(int32_t))android_dlsym(handler, "Java_com_mobvoi_ticwear_mcuservice_CoreService_"#x); \
++    if (mcu->x == NULL) { \
++        fprintf(stderr, "Unable to get symbol\n"); \
++    } \
++}
++#define LOAD_MCU_FUNC3(x) { \
++    mcu->x = (int32_t (*)(int32_t, int32_t, int32_t))android_dlsym(handler, "Java_com_mobvoi_ticwear_mcuservice_CoreService_"#x); \
++    if (mcu->x == NULL) { \
++        fprintf(stderr, "Unable to get symbol\n"); \
++    } \
++}
++#define LOAD_MCU_FUNC5(x) { \
++    mcu->x = (int32_t (*)(int32_t, int32_t, int32_t, int32_t, int32_t))android_dlsym(handler, "Java_com_mobvoi_ticwear_mcuservice_CoreService_"#x); \
++    if (mcu->x == NULL) { \
++        fprintf(stderr, "Unable to get symbol\n"); \
++    } \
++}
++
++extern "C" void *android_dlopen(const char *filename, int flags);
++extern "C" void *android_dlsym(void *handle, const char *symbol);
++extern "C" int android_dlclose(void *handle);
++
+ #ifdef QPA_HWC_TIMING
+ #define QPA_HWC_TIMING_SAMPLE(variable) variable = timer.nsecsElapsed()
+ static QElapsedTimer timer;
+@@ -186,6 +221,7 @@ HwComposerBackend_v11::HwComposerBackend_v11(hw_module_t *hwc_module, hw_device_
+     , hwc_mList(NULL)
+     , num_displays(num_displays)
+     , m_displayOff(true)
++    , mcu(nullptr)
+ {
+     procs = new HwcProcs_v11();
+     procs->invalidate = hwc11_callback_invalidate;
+@@ -197,6 +233,23 @@ HwComposerBackend_v11::HwComposerBackend_v11(hw_module_t *hwc_module, hw_device_
+ 
+     hwc_version = interpreted_version(hw_device);
+     sleepDisplay(false);
++    void *handler = android_dlopen("libmcutool.so", RTLD_LAZY);
++    if (handler) {
++        mcu = (mcu_t*) malloc(sizeof(mcu_t));
++        LOAD_MCU_FUNC3(nativeAutoLowPowerScreen)
++        LOAD_MCU_FUNC(nativeBandMode)
++        LOAD_MCU_FUNC(nativeCutOffScreen)
++        LOAD_MCU_FUNC3(nativeEnableHeartRate)
++        LOAD_MCU_FUNC3(nativeEnableLowPowerScreen)
++        LOAD_MCU_FUNC3(nativeEnableMotion)
++        LOAD_MCU_FUNC3(nativeEnableStepCounter)
++        LOAD_MCU_FUNC1(nativeGetBandModeData)
++        LOAD_MCU_FUNC(nativeGetDataVersion)
++        LOAD_MCU_FUNC3(nativeSyncSteps)
++        LOAD_MCU_FUNC(nativeSyncTime)
++        LOAD_MCU_FUNC5(nativeUpdateFitnessState)
++        LOAD_MCU_FUNC(nativeWipeBandModeData)
++    }
+ }
+ 
+ HwComposerBackend_v11::~HwComposerBackend_v11()
+@@ -375,6 +428,10 @@ HwComposerBackend_v11::sleepDisplay(bool sleep)
+         } else
+ #endif
+ #ifdef HWC_DEVICE_API_VERSION_1_5
++        if (mcu) {
++            mcu->nativeAutoLowPowerScreen(0, 0, 1);
++            mcu->nativeSyncTime();
++        }
+         if (hwc_version == HWC_DEVICE_API_VERSION_1_5) {
+             if (m_ambientMode) {
+                 HWC_PLUGIN_EXPECT_ZERO(hwc_device->setPowerMode(hwc_device, 0, HWC_POWER_MODE_DOZE_SUSPEND));
+diff --git a/hwcomposer/hwcomposer_backend_v11.h b/hwcomposer/hwcomposer_backend_v11.h
+index 240033c..5a1c003 100644
+--- a/hwcomposer/hwcomposer_backend_v11.h
++++ b/hwcomposer/hwcomposer_backend_v11.h
+@@ -54,6 +54,22 @@
+ class HwcProcs_v11;
+ class QWindow;
+ 
++typedef struct mcu_t {
++    int32_t (*nativeAutoLowPowerScreen)(int32_t a1, int32_t a2, int32_t a3);
++    int32_t (*nativeBandMode)(void);
++    int32_t (*nativeCutOffScreen)(void);
++    int32_t (*nativeEnableHeartRate)(int32_t a1, int32_t a2, int32_t a3);
++    int32_t (*nativeEnableLowPowerScreen)(int32_t a1, int32_t a2, int32_t a3);
++    int32_t (*nativeEnableMotion)(int32_t a1, int32_t a2, int32_t a3);
++    int32_t (*nativeEnableStepCounter)(int32_t a1, int32_t a2, int32_t a3);
++    int32_t (*nativeGetBandModeData)(int32_t result);
++    int32_t (*nativeGetDataVersion)(void);
++    int32_t (*nativeSyncSteps)(int32_t a1, int32_t a2, int32_t a3);
++    int32_t (*nativeSyncTime)(void);
++    int32_t (*nativeUpdateFitnessState)(int32_t a1, int32_t a2, int32_t a3, int32_t a4, int32_t a5);
++    int32_t (*nativeWipeBandModeData)(void);
++} mcu_t;
++
+ class HwComposerBackend_v11 : public QObject, public HwComposerBackend {
+ public:
+     HwComposerBackend_v11(hw_module_t *hwc_module, hw_device_t *hw_device, power_module_t *pw_device, void *libminisf, int num_displays);
+@@ -84,6 +100,7 @@ private:
+     power_module_t *pwr_device;
+     hwc_display_contents_1_t *hwc_list;
+     hwc_display_contents_1_t **hwc_mList;
++    mcu_t *mcu;
+     uint32_t hwc_version;
+     int num_displays;
+ 
+-- 
+2.34.1
+
