@@ -10,13 +10,11 @@ LIC_FILES_CHKSUM = "file://COPYING;md5=84dcc94da3adb52b53ae4fa38fe49e5d"
 S = "${WORKDIR}"
 PACKAGE_ARCH = "${MACHINE_ARCH}"
 COMPATIBLE_MACHINE = "catfish"
-# PV = "+git${SRCPV}"
-# S = "${WORKDIR}/git"
 inherit cmake
 
-do_install():append {
+do_install:append() {
     install -d ${D}/etc/systemd/system/timers.target.wants/
-    cp synclcdtime.service ${D}/etc/systemd/system/
-    cp synclcdtime.timer ${D}/etc/systemd/system/
+    cp ../synclcdtime.service ${D}/etc/systemd/system/
+    cp ../synclcdtime.timer ${D}/etc/systemd/system/
     ln -s ../synclcdtime.timer ${D}/etc/systemd/system/timers.target.wants/synclcdtime.timer
 }
