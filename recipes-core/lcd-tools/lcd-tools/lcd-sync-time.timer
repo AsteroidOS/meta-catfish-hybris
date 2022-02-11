@@ -1,9 +1,9 @@
 [Unit]
 Description=Sync LCD time
-Requires=synclcdtime.service
+Requires=lcd-sync-time.service
 
 [Timer]
-Unit=synclcdtime.service
+Unit=lcd-sync-time.service
 OnClockChange=true
 OnTimezoneChange=true
 
