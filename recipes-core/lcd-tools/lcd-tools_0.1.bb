@@ -18,7 +18,7 @@ inherit cmake pkgconfig
 
 do_install:append() {
     install -d ${D}/etc/systemd/system/timers.target.wants/
-    cp ../lcd-sync-time.service ${D}/etc/systemd/system/
-    cp ../lcd-sync-time.timer ${D}/etc/systemd/system/
+    cp ${S}/lcd-sync-time.service ${D}/etc/systemd/system/
+    cp ${S}/lcd-sync-time.timer ${D}/etc/systemd/system/
     ln -s ../lcd-sync-time.timer ${D}/etc/systemd/system/timers.target.wants/lcd-sync-time.timer
 }
