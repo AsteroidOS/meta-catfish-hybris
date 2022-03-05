@@ -1,0 +1,9 @@
+[Unit]
+Description=Sync LCD time
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/lcd-tools --sync-time
+
+[Install]
+WantedBy=basic.target

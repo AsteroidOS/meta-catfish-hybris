@@ -1,0 +1,11 @@
+[Unit]
+Description=Sync LCD time
+Requires=lcd-sync-time.service
+
+[Timer]
+Unit=lcd-sync-time.service
+OnClockChange=true
+OnTimezoneChange=true
+
+[Install]
+WantedBy=timers.target
